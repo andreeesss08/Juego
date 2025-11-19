@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Park Tycoon: Landscape Edition 🏞️</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap');
+        
+        body { margin: 0; overflow: hidden; background: #87CEEB; font-family: 'Fredoka', sans-serif; user-select: none; }
+        
+        /* --- UI INTERFACE --- */
+        #ui-layer { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; }
+        .interactive { pointer-events: auto; }
+
+        /* HEADER */
+        header {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 0 0 20px 20px;
+            margin: 0 20px;
+        }
+        .title { font-size: 1.5rem; color: #e67e22; font-weight: 900; letter-spacing: 1px; }
+        
+        .stats { display: flex; gap: 20px; }
+        .badge {
+            padding: 8px 16px; border-radius: 30px; font-weight: bold; display: flex; align-items: center; gap: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .money { background: #2ecc71; color: white; }
+        .visitors { background: #3498db; color: white; }
+
+        /* CONTROLS INFO */
+        .controls-info {
+            position: absolute; top: 100px; right: 20px;
+            background: rgba(0,0,0,0.6); color: white;
+            padding: 15px; border-radius: 10px; font-size: 0.85rem;
+            text-align: right; line-height: 1.6;
+            backdrop-filter: blur(4px);
+        }
+
+        /* BUILD MENU */
+        #build-menu {
+            margin-top: auto;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-top: 5px solid #e67e22;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
+        }
+
+        .categories { display: flex; gap: 10px; justify-content: center; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+        .cat-btn {
+            border: none; background: #f1f2f6; padding: 8px 15px; border-radius: 20px; cursor: pointer;
+            font-weight: bold; color: #7f8c8d; transition: 0.2s;
+        }
+        .cat-btn:hover { background: #dfe4ea; }
+        .cat-btn.active { background: #e67e22; color: white; }
+
+        .items-scroll {
+            display: flex; gap: 15px; overflow-x: auto; padding: 5px 0;
+            scroll-behavior: smooth;
+        }
+        .items-scroll::-webkit-scrollbar { height: 6px; }
+        .items-scroll::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+        .item-card {
+            min-width: 100px; height: 110px;
+            background: white; border: 2px solid #ecf0f1; border-radius: 12px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s; position: relative;
+        }
+        .item-card:hover { transform: translateY(-5px); border-color: #bdc3c7; }
+        .item-card.selected { border-color: #2ecc71; background: #f0fff4; box-shadow: 0 0 0 2px #2ecc71; }
+        
+        .item-icon { font-size: 2.2rem; margin-bottom: 5px; }
+        .item-name { font-size: 0.8rem; font-weight: bold; color: #2c3e50; }
+        .item-cost { font-size: 0.8rem; color: #e67e22; font-weight: bold; }
+        .item-size { position: absolute; top: 5px; right: 5px; font-size: 0.6rem; background: #eee; padding: 2px 4px; border-radius: 4px; color: #777;}
+
+        /* NOTIFICATION TOAST */
+        #toast {
+            position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+            background: rgba(44, 62, 80, 0.9); color: white; padding: 12px 30px;
+            border-radius: 50px; font-weight: bold; opacity: 0; transition: 0.3s;
+            pointer-events: none; z-index: 100; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+    </style>
+    
+    <!-- LIBRERÍAS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Simplex Noise para terreno (opcional, usaremos random simple para no depender de extras) -->
+</head>
+<body>
+
+    <!-- UI LAYER -->
+    <div id="ui-layer">
+        <header class="interactive">
+            <div class="title">🎡 PARK TYCOON</div>
+            <div class="stats">
+                <div class="badge money"><i class="fas fa-coins"></i> <span id="ui-money">3000</span></div>
+                <div class="badge visitors"><i class="fas fa-users"></i> <span id="ui-visitors">0</span></div>
+            </div>
+        </header>
+
+        <div class="controls-info">
+            🖱️ <b>Click Izq:</b> Construir<br>
+            🖱️ <b>Click Der:</b> Girar Cámara<br>
+            🖱️ <b>Rueda:</b> Zoom<br>
+            ⌨️ <b>Shift + Click:</b> Borrar
+        </div>
+
+        <div id="toast">Notificación</div>
+
+        <div id="build-menu" class="interactive">
+            <div class="categories" id="cat-container"></div>
+            <div class="items-scroll" id="items-container"></div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. DATOS Y CONFIGURACIÓN
+        // ==========================================
+        const CONFIG = {
+            gridSize: 40,      // 40x40 casillas jugables
+            tileSize: 10,      // Tamaño de cada casilla
+            worldSize: 400,    // gridSize * tileSize
+            startMoney: 3000
+        };
+
+        const CATALOG = [
+            // -- CAMINOS --
+            { id: 'road', name: 'Sendero', cat: 'Suelo', icon: '🟫', cost: 10, w: 1, h: 1, type: 'path', color: 0x8d6e63 },
+            { id: 'pave', name: 'Baldosa', cat: 'Suelo', icon: '⬜', cost: 15, w: 1, h: 1, type: 'path', color: 0xecf0f1 },
+            
+            // -- DECORACIÓN --
+            { id: 'tree', name: 'Árbol', cat: 'Natura', icon: '🌳', cost: 80, w: 1, h: 1, type: 'deco', color: 0x27ae60 },
+            { id: 'bush', name: 'Arbusto', cat: 'Natura', icon: '🌿', cost: 30, w: 1, h: 1, type: 'deco', color: 0x2ecc71 },
+            { id: 'fount', name: 'Fuente', cat: 'Decor', icon: '⛲', cost: 400, w: 2, h: 2, type: 'deco', color: 0x3498db },
+            { id: 'bench', name: 'Banco', cat: 'Decor', icon: '🪑', cost: 50, w: 1, h: 1, type: 'deco', color: 0xd35400 },
+            
+            // -- TIENDAS --
+            { id: 'burger', name: 'Burgers', cat: 'Tiendas', icon: '🍔', cost: 500, w: 1, h: 1, type: 'shop', income: 15, color: 0xe74c3c },
+            { id: 'ice', name: 'Helados', cat: 'Tiendas', icon: '🍦', cost: 350, w: 1, h: 1, type: 'shop', income: 10, color: 0xff7675 },
+            { id: 'drink', name: 'Bebidas', cat: 'Tiendas', icon: '🥤', cost: 300, w: 1, h: 1, type: 'shop', income: 8, color: 0x3498db },
+
+            // -- ATRACCIONES --
+            { id: 'carousel', name: 'Carrusel', cat: 'Atracción', icon: '🎠', cost: 1200, w: 2, h: 2, type: 'ride', fun: 15, income: 30, color: 0xf1c40f },
+            { id: 'ferris', name: 'Noria', cat: 'Atracción', icon: '🎡', cost: 2500, w: 2, h: 2, type: 'ride', fun: 30, income: 80, color: 0xecf0f1 },
+            { id: 'pirate', name: 'Barco', cat: 'Atracción', icon: '⛵', cost: 2000, w: 3, h: 2, type: 'ride', fun: 25, income: 60, color: 0x8e44ad },
+            { id: 'coaster', name: 'Montaña Rusa', cat: 'Atracción', icon: '🎢', cost: 5000, w: 4, h: 4, type: 'ride', fun: 80, income: 150, color: 0xe84393 }
+        ];
+
+        // ESTADO GLOBAL
+        let state = {
+            money: CONFIG.startMoney,
+            visitors: [],
+            buildings: [],
+            selectedId: 'road',
+            grid: [] // Se llenará en init
+        };
+
+        // ==========================================
+        // 2. MOTOR GRÁFICO (THREE.JS)
+        // ==========================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Color Cielo
+        scene.fog = new THREE.Fog(0x87CEEB, 200, 800);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 1, 2000);
+        camera.position.set(0, 300, 400); // Posición elevada
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // CONTROLES
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxPolarAngle = Math.PI / 2.2; // Limitar ángulo para no ver bajo el suelo
+        controls.minDistance = 50;
+        controls.maxDistance = 600;
+
+        // LUCES
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(100, 200, 50);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.left = -300;
+        dirLight.shadow.camera.right = 300;
+        dirLight.shadow.camera.top = 300;
+        dirLight.shadow.camera.bottom = -300;
+        scene.add(dirLight);
+
+        // ==========================================
+        // 3. ENTORNO Y GRID (LA CLAVE)
+        // ==========================================
+        
+        // A. PLANO DE INTERACCIÓN INVISIBLE (RAYCAST ONLY)
+        // Este plano asegura que el ratón siempre detecte el suelo, incluso si construimos cosas encima.
+        const interactionPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(CONFIG.worldSize, CONFIG.worldSize),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        interactionPlane.rotation.x = -Math.PI / 2;
+        scene.add(interactionPlane);
+
+        // B. SUELO VISIBLE
+        const groundGeo = new THREE.PlaneGeometry(CONFIG.worldSize, CONFIG.worldSize);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x5ba348 }); // Césped bonito
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.1; // Ligeramente abajo para evitar parpadeo
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // C. REJILLA VISUAL
+        const gridHelper = new THREE.GridHelper(CONFIG.worldSize, CONFIG.gridSize, 0x3e7a2e, 0x3e7a2e);
+        gridHelper.position.y = 0;
+        gridHelper.material.opacity = 0.3;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+
+        // D. PAISAJE (DECORACIÓN EXTERNA)
+        function createLandscape() {
+            const geo = new THREE.ConeGeometry(30, 60, 4); // Montañas Low Poly
+            const mat = new THREE.MeshStandardMaterial({ color: 0x6b8c42, flatShading: true });
+            
+            // Crear montañas alrededor del borde
+            for (let i = 0; i < 40; i++) {
+                const mountain = new THREE.Mesh(geo, mat);
+                // Posición aleatoria pero FUERA del grid jugable
+                const angle = Math.random() * Math.PI * 2;
+                const radius = CONFIG.worldSize/2 + 30 + Math.random() * 100;
+                
+                mountain.position.x = Math.cos(angle) * radius;
+                mountain.position.z = Math.sin(angle) * radius;
+                mountain.position.y = 10 + Math.random() * 20;
+                mountain.scale.set(1 + Math.random(), 1 + Math.random(), 1 + Math.random());
+                scene.add(mountain);
+            }
+
+            // Árboles lejanos
+            const treeGeo = new THREE.CylinderGeometry(0, 10, 30, 4);
+            const treeMat = new THREE.MeshStandardMaterial({ color: 0x2d5a27, flatShading: true });
+            for (let i=0; i < 60; i++) {
+                const t = new THREE.Mesh(treeGeo, treeMat);
+                const angle = Math.random() * Math.PI * 2;
+                const radius = CONFIG.worldSize/2 + 20 + Math.random() * 150;
+                t.position.x = Math.cos(angle) * radius;
+                t.position.z = Math.sin(angle) * radius;
+                t.position.y = 15;
+                scene.add(t);
+            }
+        }
+        createLandscape();
+
+        // ==========================================
+        // 4. LOGICA DEL JUEGO
+        // ==========================================
+
+        // Inicializar Grid Lógica
+        for(let i=0; i<CONFIG.gridSize; i++) {
+            state.grid[i] = new Array(CONFIG.gridSize).fill(null);
+        }
+
+        // Raycaster
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const ghostMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 5, 1),
+            new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 })
+        );
+        scene.add(ghostMesh);
+
+        let hoveredCell = { x: -1, z: -1 };
+        let canBuild = false;
+
+        // GENERADOR DE MODELOS 3D SIMPLES
+        function createBuildingMesh(item) {
+            const group = new THREE.Group();
+            const w = item.w * CONFIG.tileSize;
+            const d = item.h * CONFIG.tileSize;
+            const color = item.color;
+
+            if (item.id === 'tree') {
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(1,2,5), new THREE.MeshStandardMaterial({color:0x5d4037}));
+                trunk.position.y = 2.5;
+                const leaves = new THREE.Mesh(new THREE.ConeGeometry(6, 15, 8), new THREE.MeshStandardMaterial({color}));
+                leaves.position.y = 10;
+                group.add(trunk, leaves);
+            } 
+            else if (item.type === 'path') {
+                const geo = new THREE.PlaneGeometry(w, d);
+                const mat = new THREE.MeshStandardMaterial({color});
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.rotation.x = -Math.PI/2;
+                mesh.position.y = 0.2; // Pegado al suelo pero visible
+                mesh.receiveShadow = true;
+                group.add(mesh);
+            }
+            else if (item.id === 'ferris') {
+                // Noria simple
+                const base = new THREE.Mesh(new THREE.BoxGeometry(w-2, 5, d-2), new THREE.MeshStandardMaterial({color:0x555}));
+                base.position.y = 2.5;
+                const wheel = new THREE.Mesh(new THREE.TorusGeometry(12, 1, 8, 16), new THREE.MeshStandardMaterial({color:0xffffff}));
+                wheel.position.y = 18;
+                wheel.userData = { spin: 'z' };
+                group.add(base, wheel);
+            }
+            else if (item.id === 'coaster') {
+                // Estructura grande
+                const pillars = new THREE.Mesh(new THREE.BoxGeometry(w-2, 20, d-2), new THREE.MeshStandardMaterial({color:color, wireframe:true}));
+                pillars.position.y = 10;
+                const track = new THREE.Mesh(new THREE.TorusKnotGeometry(15, 2, 64, 8), new THREE.MeshStandardMaterial({color:0xff0000}));
+                track.position.y = 25;
+                track.rotation.x = Math.PI/2;
+                group.add(pillars, track);
+            }
+            else {
+                // Edificio Genérico
+                const h = item.type === 'ride' ? 15 : 10;
+                const geo = new THREE.BoxGeometry(w-2, h, d-2);
+                const mat = new THREE.MeshStandardMaterial({ color });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.y = h/2;
+                mesh.castShadow = true;
+                group.add(mesh);
+            }
+            return group;
+        }
+
+        // INPUT HANDLING
+        window.addEventListener('mousemove', (e) => {
+            // Normalizar ratón
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            
+            // INTERSECTAR SOLO EL PLANO INVISIBLE
+            const intersects = raycaster.intersectObject(interactionPlane);
+
+            if (intersects.length > 0) {
+                const p = intersects[0].point;
+                
+                // Convertir mundo -> grid
+                // Offset para centrar (0,0) en la esquina superior izquierda del grid
+                const offset = CONFIG.worldSize / 2;
+                const gx = Math.floor((p.x + offset) / CONFIG.tileSize);
+                const gz = Math.floor((p.z + offset) / CONFIG.tileSize);
+
+                // Validar límites
+                if (gx >= 0 && gx < CONFIG.gridSize && gz >= 0 && gz < CONFIG.gridSize) {
+                    hoveredCell = { x: gx, z: gz };
+                    updateGhost();
+                } else {
+                    ghostMesh.visible = false;
+                    hoveredCell = { x: -1, z: -1 };
+                }
+            }
+        });
+
+        function updateGhost() {
+            const item = CATALOG.find(i => i.id === state.selectedId);
+            if (!item) return;
+
+            // Calcular posición central del objeto
+            const cx = (hoveredCell.x * CONFIG.tileSize) - CONFIG.worldSize/2 + (item.w * CONFIG.tileSize)/2;
+            const cz = (hoveredCell.z * CONFIG.tileSize) - CONFIG.worldSize/2 + (item.h * CONFIG.tileSize)/2;
+
+            ghostMesh.position.set(cx, 2, cz);
+            ghostMesh.scale.set(item.w * CONFIG.tileSize, 1, item.h * CONFIG.tileSize);
+            ghostMesh.visible = true;
+
+            // Chequear disponibilidad
+            canBuild = checkValid(hoveredCell.x, hoveredCell.z, item);
+            
+            // Color Feedback
+            ghostMesh.material.color.setHex(canBuild ? 0x00ff00 : 0xff0000);
+        }
+
+        function checkValid(gx, gz, item) {
+            if (state.money < item.cost) return false;
+            if (gx + item.w > CONFIG.gridSize || gz + item.h > CONFIG.gridSize) return false;
+            
+            for(let i=0; i<item.w; i++) {
+                for(let j=0; j<item.h; j++) {
+                    if (state.grid[gx+i][gz+j] !== null) return false;
+                }
+            }
+            return true;
+        }
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // Solo click izquierdo
+            if (e.target.closest('.interactive')) return; // Ignorar clics en UI
+
+            // MODO BORRAR (SHIFT)
+            if (e.shiftKey && hoveredCell.x !== -1) {
+                demolish();
+                return;
+            }
+
+            // MODO CONSTRUIR
+            if (canBuild && hoveredCell.x !== -1) {
+                build();
+            } else if (!canBuild && hoveredCell.x !== -1) {
+                if (state.money < CATALOG.find(i => i.id === state.selectedId).cost) {
+                    showToast("❌ Dinero insuficiente");
+                } else {
+                    showToast("❌ Espacio ocupado");
+                }
+            }
+        });
+
+        function build() {
+            const item = CATALOG.find(i => i.id === state.selectedId);
+            const {x, z} = hoveredCell;
+
+            // Pago
+            state.money -= item.cost;
+            updateUI();
+
+            // Visual
+            const mesh = createBuildingMesh(item);
+            const cx = (x * CONFIG.tileSize) - CONFIG.worldSize/2 + (item.w * CONFIG.tileSize)/2;
+            const cz = (z * CONFIG.tileSize) - CONFIG.worldSize/2 + (item.h * CONFIG.tileSize)/2;
+            mesh.position.set(cx, 0, cz);
+
+            // Animación entrada
+            mesh.scale.set(0,0,0);
+            scene.add(mesh);
+            
+            // Guardar referencia
+            const record = { mesh, data: item, gx: x, gz: z };
+            state.buildings.push(record);
+
+            // Ocupar Grid
+            for(let i=0; i<item.w; i++) {
+                for(let j=0; j<item.h; j++) {
+                    state.grid[x+i][z+j] = record;
+                }
+            }
+
+            // Pop animation manual
+            let s = 0;
+            const anim = setInterval(() => {
+                s += 0.1;
+                mesh.scale.set(s, s, s);
+                if(s >= 1) clearInterval(anim);
+            }, 16);
+
+            showToast(`🏗️ ${item.name} Construido`);
+            
+            // Re-chequear fantasma
+            canBuild = checkValid(x, z, item);
+            ghostMesh.material.color.setHex(canBuild ? 0x00ff00 : 0xff0000);
+        }
+
+        function demolish() {
+            const cell = state.grid[hoveredCell.x][hoveredCell.z];
+            if (cell) {
+                scene.remove(cell.mesh);
+                state.money += Math.floor(cell.data.cost / 2);
+                
+                // Limpiar referencias
+                state.buildings = state.buildings.filter(b => b !== cell);
+                
+                // Limpiar grid area
+                const ox = cell.gx;
+                const oz = cell.gz;
+                for(let i=0; i<cell.data.w; i++) {
+                    for(let j=0; j<cell.data.h; j++) {
+                        state.grid[ox+i][oz+j] = null;
+                    }
+                }
+                
+                updateUI();
+                showToast("💥 Demolido (+50% valor)");
+            }
+        }
+
+        // ==========================================
+        // 5. VISITANTES & ECONOMÍA
+        // ==========================================
+
+        function spawnVisitor() {
+            // Buscar caminos
+            const paths = [];
+            for(let x=0; x<CONFIG.gridSize; x++) {
+                for(let z=0; z<CONFIG.gridSize; z++) {
+                    if (state.grid[x][z] && state.grid[x][z].data.type === 'path') {
+                        paths.push({x, z});
+                    }
+                }
+            }
+
+            if (paths.length === 0) return;
+
+            const start = paths[Math.floor(Math.random() * paths.length)];
+            const color = new THREE.Color().setHSL(Math.random(), 0.8, 0.5);
+            
+            // Mesh visitante
+            const geo = new THREE.CapsuleGeometry(1.5, 3, 4, 8);
+            const mat = new THREE.MeshStandardMaterial({ color });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            const cx = (start.x * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+            const cz = (start.z * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+            
+            mesh.position.set(cx, 2.5, cz);
+            scene.add(mesh);
+
+            state.visitors.push({
+                mesh,
+                gx: start.x,
+                gz: start.z,
+                target: null,
+                lerp: 0
+            });
+            updateUI();
+        }
+
+        function updateLogic() {
+            // Mover visitantes
+            state.visitors.forEach(v => {
+                if (!v.target) {
+                    // Buscar vecino aleatorio que sea camino
+                    const neighbors = [
+                        {x:v.gx+1, z:v.gz}, {x:v.gx-1, z:v.gz},
+                        {x:v.gx, z:v.gz+1}, {x:v.gx, z:v.gz-1}
+                    ];
+                    const valid = neighbors.filter(n => 
+                        n.x>=0 && n.x<CONFIG.gridSize && n.z>=0 && n.z<CONFIG.gridSize &&
+                        state.grid[n.x][n.z] && state.grid[n.x][n.z].data.type === 'path'
+                    );
+
+                    if (valid.length > 0) {
+                        v.target = valid[Math.floor(Math.random()*valid.length)];
+                        v.lerp = 0;
+                        // Girar
+                        const tx = (v.target.x * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+                        const tz = (v.target.z * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+                        v.mesh.lookAt(tx, 2.5, tz);
+                    }
+                } else {
+                    // Mover
+                    v.lerp += 0.05;
+                    if (v.lerp >= 1) {
+                        v.gx = v.target.x;
+                        v.gz = v.target.z;
+                        v.target = null;
+                    } else {
+                        const startX = (v.gx * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+                        const startZ = (v.gz * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+                        const endX = (v.target.x * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+                        const endZ = (v.target.z * CONFIG.tileSize) - CONFIG.worldSize/2 + CONFIG.tileSize/2;
+                        
+                        v.mesh.position.x = startX + (endX - startX) * v.lerp;
+                        v.mesh.position.z = startZ + (endZ - startZ) * v.lerp;
+                        // Pequeño salto
+                        v.mesh.position.y = 2.5 + Math.sin(v.lerp * Math.PI)*0.5;
+                    }
+                }
+            });
+
+            // Rotar Norias
+            state.buildings.forEach(b => {
+                b.mesh.children.forEach(c => {
+                    if (c.userData.spin === 'z') c.rotation.z -= 0.01;
+                });
+            });
+        }
+
+        // Loop Economía (2 segundos)
+        setInterval(() => {
+            let income = 0;
+            let fun = 0;
+
+            // Calcular stats totales
+            // Usamos Set para evitar contar edificios grandes multiples veces
+            const counted = new Set();
+            state.buildings.forEach(b => {
+                if (!counted.has(b.mesh.id)) {
+                    if (b.data.income) income += b.data.income;
+                    if (b.data.fun) fun += b.data.fun;
+                    counted.add(b.mesh.id);
+                }
+            });
+
+            // Ganancias
+            if (state.visitors.length > 0) {
+                const earned = Math.floor(income * (state.visitors.length / 4));
+                if (earned > 0) {
+                    state.money += earned;
+                    showToast(`💰 Ingresos: +$${earned}`);
+                }
+            }
+
+            // Generar visitantes
+            const maxVisitors = 5 + fun * 2;
+            if (state.visitors.length < maxVisitors) {
+                spawnVisitor();
+            }
+            updateUI();
+
+        }, 2000);
+
+        // ==========================================
+        // 6. UI GENERATION & LOOP
+        // ==========================================
+
+        function initUI() {
+            const cats = [...new Set(CATALOG.map(i => i.cat))];
+            const catContainer = document.getElementById('cat-container');
+            
+            cats.forEach((cat, i) => {
+                const btn = document.createElement('button');
+                btn.className = `cat-btn ${i===0 ? 'active' : ''}`;
+                btn.innerText = cat;
+                btn.onclick = () => {
+                    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderItems(cat);
+                };
+                catContainer.appendChild(btn);
+            });
+            renderItems(cats[0]);
+        }
+
+        function renderItems(cat) {
+            const cont = document.getElementById('items-container');
+            cont.innerHTML = '';
+            
+            CATALOG.filter(i => i.cat === cat).forEach(item => {
+                const div = document.createElement('div');
+                div.className = `item-card ${state.selectedId === item.id ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <span class="item-size">${item.w}x${item.h}</span>
+                    <div class="item-icon">${item.icon}</div>
+                    <div class="item-name">${item.name}</div>
+                    <div class="item-cost">$${item.cost}</div>
+                `;
+                div.onclick = () => {
+                    state.selectedId = item.id;
+                    document.querySelectorAll('.item-card').forEach(c => c.classList.remove('selected'));
+                    div.classList.add('selected');
+                };
+                cont.appendChild(div);
+            });
+        }
+
+        function updateUI() {
+            document.getElementById('ui-money').innerText = state.money;
+            document.getElementById('ui-visitors').innerText = state.visitors.length;
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.opacity = 1;
+            t.style.top = "15%";
+            setTimeout(() => {
+                t.style.opacity = 0;
+                t.style.top = "20%";
+            }, 2500);
+        }
+
+        // START LOOP
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateLogic();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        initUI();
+        animate();
+
+    </script>
+</body>
+</html>
